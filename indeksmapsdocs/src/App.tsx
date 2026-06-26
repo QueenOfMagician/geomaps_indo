@@ -542,7 +542,7 @@ function PetaKelurahan() {
   return (
     <div style={{ width: '100%', height: '500px' }}>
       <IndeksMapPMTiles
-        pmtilesUrl="/IDN_level_4.pmtiles"
+        pmtilesUrl="https://cdn.jsdelivr.net/gh/QueenOfMagician/geomaps_indo@main/data-static-indonesia/geojson-indonesia/IDN_level_4.pmtiles"
         styleUrl="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
         zoom={11}
         center={[106.8456, -6.2088]} // Jakarta
