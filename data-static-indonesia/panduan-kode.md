@@ -141,7 +141,7 @@ Selain data tekstual, repositori ini menyertakan peta batas wilayah Indonesia da
 
 Berkas peta terletak di:
 ```
-data-static-indonesia/geo-indonesia/
+data-static-indonesia/geojson-indonesia/
 ├── IDN_level_0.pmtiles                # Peta batas Negara Indonesia (Level 0)
 ├── IDN_level_1.pmtiles                # Peta batas Provinsi (Level 1)
 ├── IDN_level_2.pmtiles                # Peta batas Kabupaten/Kota (Level 2)
@@ -199,7 +199,7 @@ Gunakan pustaka client **MapLibre GL JS** bersama dengan **pmtiles helper librar
 
     // 2. URL ke berkas pmtiles (bisa dari localhost atau static hosting Anda di GitHub Pages)
     // Ubah URL di bawah sesuai domain hosting Anda
-    const PMTILES_URL = "https://QueenOfMagician.github.io/geomaps_indo/data-static-indonesia/geo-indonesia/IDN_level_1.pmtiles";
+    const PMTILES_URL = "https://QueenOfMagician.github.io/geomaps_indo/data-static-indonesia/geojson-indonesia/IDN_level_1.pmtiles";
 
     // 3. Buat peta MapLibre
     const map = new maplibregl.Map({

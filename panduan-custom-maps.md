@@ -1,366 +1,304 @@
-# Panduan Pembuatan Project Custom Maps (React + TypeScript)
+# Membuat Custom 2D Map Tanpa Library Eksternal
 
-Panduan ini mendetailkan cara membangun aplikasi peta interaktif Indonesia menggunakan **React**, **TypeScript**, **MapLibre GL JS**, dan data **PMTiles** serta **JSON Kode Wilayah** yang ada di repositori ini.
+Panduan ini menjelaskan cara membuat peta geografis custom dari nol — proyeksi, rendering SVG, styling, sampai interaktivitas — pakai React + JavaScript murni, tanpa `react-simple-maps`, `d3-geo`, atau library peta lainnya.
 
 ---
 
-## 1. Setup Project dengan Vite
+## 1. Kapan Cocok Pakai Pendekatan Ini
 
-Inisialisasi project React + TypeScript baru menggunakan Vite:
+| Cocok kalau... | Mulai berat kalau... |
+|---|---|
+| Wilayah regional/lokal, bukan peta dunia | Cakupan area sangat luas lintas lintang (perlu proyeksi Mercator asli) |
+| Jumlah polygon puluhan–ratusan | Ribuan feature dengan geometry sangat detail |
+| Mau kontrol penuh tampilan & bundle size kecil | Butuh zoom/pan yang sangat smooth (gesture, inertia) |
+| Boundary dari data sendiri (PostGIS/GeoJSON) | Butuh basemap (jalan, sungai, dll) — itu butuh tile, bukan SVG murni |
 
-```bash
-# Membuat project baru
-npm create vite@latest indonesia-custom-maps -- --template react-ts
+---
 
-# Masuk ke folder project
-cd indonesia-custom-maps
+## 2. Alur Kerja Inti
 
-# Menginstal dependensi dasar
-npm install
+```
+GeoJSON (lon/lat)
+   → 1. Hitung bounding box (min/max lon & lat)
+   → 2. Buat fungsi proyeksi: lon/lat → x/y pixel
+   → 3. Ubah setiap polygon jadi string path SVG ("M x,y L x,y ... Z")
+   → 4. Render <path> per wilayah + styling/interaktivitas
+```
+
+Tidak ada "tile" atau "basemap" di sini — peta sepenuhnya digambar dari koordinat data kamu sendiri.
+
+---
+
+## 3. Siapkan Data
+
+Sama seperti pendekatan pakai library: format wajib **GeoJSON** (`FeatureCollection`), bisa dari file statis atau endpoint API yang query PostGIS:
+
+```sql
+SELECT jsonb_build_object(
+  'type', 'FeatureCollection',
+  'features', jsonb_agg(
+    jsonb_build_object(
+      'type', 'Feature',
+      'geometry', ST_AsGeoJSON(ST_Simplify(geom, 0.001))::jsonb,
+      'properties', jsonb_build_object('name', name, 'kepadatan', kepadatan)
+    )
+  )
+) AS geojson
+FROM wilayah;
+```
+
+`ST_Simplify` di sini penting — tanpa optimasi tile seperti library peta profesional, makin banyak titik per polygon = makin berat proses bikin path string-nya di browser.
+
+---
+
+## 4. Hitung Bounding Box
+
+Cari nilai lon/lat minimum & maksimum dari seluruh feature, untuk dasar penskalaan nanti:
+
+```js
+function getBounds(featureCollection) {
+  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+
+  const visitRing = (ring) => {
+    for (const [lon, lat] of ring) {
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    }
+  };
+
+  for (const f of featureCollection.features) {
+    const { type, coordinates } = f.geometry;
+    if (type === "Polygon") coordinates.forEach(visitRing);
+    if (type === "MultiPolygon") coordinates.forEach((poly) => poly.forEach(visitRing));
+  }
+  return { minLon, minLat, maxLon, maxLat };
+}
 ```
 
 ---
 
-## 2. Instalasi Dependensi Peta
+## 5. Buat Fungsi Proyeksi
 
-Instal pustaka MapLibre GL JS, plugin PMTiles, dan tipe TypeScript pendukungnya:
+Proyeksi = fungsi yang mengubah `[lon, lat]` jadi `[x, y]` pixel, sekaligus "fit" ke ukuran SVG-mu (mirip `fitSize` di d3).
 
-```bash
-npm install maplibre-gl pmtiles
-npm install -D @types/geojson
+```js
+function makeProjection(bounds, width, height, padding = 24) {
+  const { minLon, minLat, maxLon, maxLat } = bounds;
+  const lonSpan = maxLon - minLon || 1;
+  const latSpan = maxLat - minLat || 1;
+
+  // pilih skala terkecil supaya peta tidak terdistorsi/terpotong
+  const scale = Math.min(
+    (width - padding * 2) / lonSpan,
+    (height - padding * 2) / latSpan
+  );
+
+  const usedWidth = lonSpan * scale;
+  const usedHeight = latSpan * scale;
+  const offsetX = (width - usedWidth) / 2;
+  const offsetY = (height - usedHeight) / 2;
+
+  return (lon, lat) => [
+    (lon - minLon) * scale + offsetX,
+    (maxLat - lat) * scale + offsetY, // y dibalik: SVG y tumbuh ke bawah, lat ke atas
+  ];
+}
+```
+
+> **Catatan akurasi:** ini proyeksi *equirectangular* (linear sederhana) — cukup akurat untuk area regional. Untuk cakupan sangat luas lintas lintang, ganti komponen `lat` dengan rumus Mercator agar bentuk wilayah di lintang tinggi tidak gepeng:
+> ```js
+> function latToMercator(latDeg) {
+>   const lat = (latDeg * Math.PI) / 180;
+>   return Math.log(Math.tan(Math.PI / 4 + lat / 2));
+> }
+> ```
+
+---
+
+## 6. Ubah Geometry Jadi Path SVG
+
+```js
+function ringToPathSegment(ring, project) {
+  return ring
+    .map(([lon, lat], i) => {
+      const [x, y] = project(lon, lat);
+      return `${i === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ") + " Z";
+}
+
+function geometryToPath(geometry, project) {
+  if (geometry.type === "Polygon") {
+    return geometry.coordinates.map((ring) => ringToPathSegment(ring, project)).join(" ");
+  }
+  if (geometry.type === "MultiPolygon") {
+    return geometry.coordinates
+      .map((poly) => poly.map((ring) => ringToPathSegment(ring, project)).join(" "))
+      .join(" ");
+  }
+  return "";
+}
+```
+
+`ring` pertama dalam `Polygon` adalah garis luar; ring selanjutnya (kalau ada) adalah lubang di dalamnya (misal danau di tengah wilayah) — SVG otomatis menangani ini lewat fill-rule default (`nonzero`), jadi tidak perlu kode tambahan.
+
+---
+
+## 7. Render Komponen Dasar
+
+```tsx
+function Map({ data, width = 640, height = 440 }) {
+  const project = useMemo(() => {
+    const bounds = getBounds(data);
+    return makeProjection(bounds, width, height);
+  }, [data, width, height]);
+
+  return (
+    <svg width={width} height={height}>
+      {data.features.map((f) => (
+        <path
+          key={f.properties.name}
+          d={geometryToPath(f.geometry, project)}
+          fill="#D6D6DA"
+          stroke="#fff"
+          strokeWidth={1}
+        />
+      ))}
+    </svg>
+  );
+}
 ```
 
 ---
 
-## 3. Struktur Project React yang Direkomendasikan
+## 8. Choropleth — Warna Manual Berdasarkan Data
+
+Interpolasi linear antar dua warna, tanpa `d3-scale`:
+
+```js
+function colorFor(value, min, max, from = [219, 234, 254], to = [30, 58, 138]) {
+  const t = (value - min) / (max - min || 1);
+  const r = Math.round(from[0] + (to[0] - from[0]) * t);
+  const g = Math.round(from[1] + (to[1] - from[1]) * t);
+  const b = Math.round(from[2] + (to[2] - from[2]) * t);
+  return `rgb(${r},${g},${b})`;
+}
+```
+
+```tsx
+fill={colorFor(f.properties.kepadatan, min, max)}
+```
+
+---
+
+## 9. Interaktivitas — Hover & Klik
+
+```tsx
+const [hoveredId, setHoveredId] = useState(null);
+const [selected, setSelected] = useState(null);
+
+<path
+  d={geometryToPath(f.geometry, project)}
+  fill={colorFor(f.properties.kepadatan, min, max)}
+  stroke={selected?.properties.name === f.properties.name ? "#0f172a" : "#fff"}
+  strokeWidth={hoveredId === f.properties.name ? 2 : 1}
+  onMouseEnter={() => setHoveredId(f.properties.name)}
+  onMouseLeave={() => setHoveredId(null)}
+  onClick={() => setSelected(f)}
+  style={{ cursor: "pointer" }}
+/>
+```
+
+Tampilkan detail `selected` di panel samping (lebih simpel & stabil daripada tooltip yang mengikuti kursor).
+
+---
+
+## 10. Label / Centroid Sederhana
+
+Rata-rata semua titik di ring luar — cukup akurat untuk polygon yang tidak terlalu cekung:
+
+```js
+function simpleCentroid(geometry) {
+  const ring = geometry.type === "Polygon" ? geometry.coordinates[0] : geometry.coordinates[0][0];
+  const sum = ring.reduce(([sx, sy], [lon, lat]) => [sx + lon, sy + lat], [0, 0]);
+  return [sum[0] / ring.length, sum[1] / ring.length];
+}
+```
+
+---
+
+## 11. Zoom & Pan Manual (Opsional)
+
+Tanpa library, cara paling sederhana: bungkus isi `<svg>` dalam `<g>` dan ubah `transform` berdasarkan state.
+
+```tsx
+const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
+
+const handleWheel = (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  setTransform((t) => ({ ...t, k: Math.min(8, Math.max(1, t.k * delta)) }));
+};
+
+<svg width={width} height={height} onWheel={handleWheel}>
+  <g transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}>
+    {/* path-path wilayah di sini */}
+  </g>
+</svg>
+```
+
+Untuk pan (drag), tambahkan `onMouseDown`/`onMouseMove`/`onMouseUp` yang mengubah `transform.x`/`transform.y` berdasarkan delta posisi mouse. Ini versi dasar — belum ada inertia/touch gesture seperti library mapping profesional.
+
+---
+
+## 12. Performa — Simplifikasi Tanpa Library
+
+Kalau geometry terlalu detail dan tidak bisa di-`ST_Simplify` di database, versi sederhana algoritma pengurangan titik (ambil 1 dari setiap N titik — bukan Douglas-Peucker asli, tapi cukup untuk kasus ringan):
+
+```js
+function naiveSimplify(ring, everyN = 2) {
+  return ring.filter((_, i) => i % everyN === 0 || i === ring.length - 1);
+}
+```
+
+Untuk hasil simplifikasi yang lebih baik secara bentuk (bukan cuma buang titik acak), tetap disarankan proses di backend (`ST_Simplify`) atau sekali saja saat build-time, bukan di runtime browser.
+
+---
+
+## 13. Struktur Project yang Disarankan
 
 ```
 src/
-├── components/
-│   ├── MapContainer.tsx               # Komponen Peta Utama
-│   └── RegionSelector.tsx             # Cascading Dropdowns
-├── types/
-│   └── region.ts                      # Tipe data TypeScript
-├── App.tsx
-├── index.css
-└── main.tsx
+  map/
+    projection.js     ← getBounds, makeProjection, latToMercator (opsional)
+    geometry.js        ← geometryToPath, simpleCentroid
+    color.js           ← colorFor
+  components/
+    Map.tsx             ← komponen utama, render <svg>
+    MapDetailPanel.tsx  ← panel info wilayah terpilih
+  hooks/
+    useRegionsData.ts   ← fetch GeoJSON dari API/PostGIS
 ```
 
 ---
 
-## 4. Implementasi Kode
+## 14. Kapan Sebaiknya Pindah ke Library
 
-### A. Definisi Type (`src/types/region.ts`)
+Pertimbangkan kembali ke `react-simple-maps`/`d3-geo` kalau salah satu ini mulai jadi masalah nyata:
 
-Buat tipe data untuk wilayah administrasi:
+- Zoom/pan butuh terasa "natural" (inertia, multi-touch)
+- Data makin besar dan render mulai lag walau sudah disimplify
+- Butuh proyeksi yang akurat secara kartografis (bukan cuma `fit ke kotak`)
+- Tim makin besar — kode custom butuh didokumentasikan & dirawat sendiri
 
-```typescript
-export interface Region {
-  code: string;
-  name: string;
-}
-
-export type RegionLevel = 'province' | 'regency' | 'district' | 'village';
-```
-
-### B. Komponen Selektor Cascading (`src/components/RegionSelector.tsx`)
-
-Komponen dropdown bertingkat untuk memilih Provinsi -> Kabupaten/Kota -> Kecamatan -> Desa:
-
-```typescript
-import React, { useEffect, useState } from 'react';
-import { Region } from '../types/region';
-
-interface RegionSelectorProps {
-  onRegionChange: (level: string, code: string | null) => void;
-}
-
-const BASE_URL = "https://QueenOfMagician.github.io/geomaps_indo/data-static-indonesia/kode-wilayah";
-
-export const RegionSelector: React.FC<RegionSelectorProps> = ({ onRegionChange }) => {
-  const [provinces, setProvinces] = useState<Region[]>([]);
-  const [regencies, setRegencies] = useState<Region[]>([]);
-  const [districts, setDistricts] = useState<Region[]>([]);
-  const [villages, setVillages] = useState<Region[]>([]);
-
-  const [selectedProvince, setSelectedProvince] = useState('');
-  const [selectedRegency, setSelectedRegency] = useState('');
-  const [selectedDistrict, setSelectedDistrict] = useState('');
-  const [selectedVillage, setSelectedVillage] = useState('');
-
-  // Load Provinces
-  useEffect(() => {
-    fetch(`${BASE_URL}/provinces.json`)
-      .then((res) => res.json())
-      .then((data) => setProvinces(data));
-  }, []);
-
-  // Load Regencies when Province changes
-  useEffect(() => {
-    if (!selectedProvince) {
-      setRegencies([]);
-      return;
-    }
-    fetch(`${BASE_URL}/provinces/${selectedProvince}.json`)
-      .then((res) => res.json())
-      .then((data) => setRegencies(data));
-  }, [selectedProvince]);
-
-  // Load Districts when Regency changes
-  useEffect(() => {
-    if (!selectedRegency) {
-      setDistricts([]);
-      return;
-    }
-    const provCode = selectedProvince;
-    fetch(`${BASE_URL}/regencies/${provCode}/${selectedRegency}.json`)
-      .then((res) => res.json())
-      .then((data) => setDistricts(data));
-  }, [selectedRegency, selectedProvince]);
-
-  // Load Villages when District changes
-  useEffect(() => {
-    if (!selectedDistrict) {
-      setVillages([]);
-      return;
-    }
-    const provCode = selectedProvince;
-    const regCode = selectedRegency;
-    fetch(`${BASE_URL}/districts/${provCode}/${regCode}/${selectedDistrict}.json`)
-      .then((res) => res.json())
-      .then((data) => setVillages(data));
-  }, [selectedDistrict, selectedRegency, selectedProvince]);
-
-  return (
-    <div style={{ display: 'flex', gap: '10px', padding: '15px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', position: 'absolute', top: 20, left: 20, zIndex: 10 }}>
-      {/* Dropdown Provinsi */}
-      <select value={selectedProvince} onChange={(e) => {
-        const val = e.target.value;
-        setSelectedProvince(val);
-        setSelectedRegency('');
-        setSelectedDistrict('');
-        setSelectedVillage('');
-        onRegionChange('province', val || null);
-      }}>
-        <option value="">Pilih Provinsi</option>
-        {provinces.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
-      </select>
-
-      {/* Dropdown Kabupaten */}
-      <select value={selectedRegency} disabled={!selectedProvince} onChange={(e) => {
-        const val = e.target.value;
-        setSelectedRegency(val);
-        setSelectedDistrict('');
-        setSelectedVillage('');
-        onRegionChange('regency', val || null);
-      }}>
-        <option value="">Pilih Kabupaten/Kota</option>
-        {regencies.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
-      </select>
-
-      {/* Dropdown Kecamatan */}
-      <select value={selectedDistrict} disabled={!selectedRegency} onChange={(e) => {
-        const val = e.target.value;
-        setSelectedDistrict(val);
-        setSelectedVillage('');
-        onRegionChange('district', val || null);
-      }}>
-        <option value="">Pilih Kecamatan</option>
-        {districts.map((d) => <option key={d.code} value={d.code}>{d.name}</option>)}
-      </select>
-
-      {/* Dropdown Desa */}
-      <select value={selectedVillage} disabled={!selectedDistrict} onChange={(e) => {
-        const val = e.target.value;
-        setSelectedVillage(val);
-        onRegionChange('village', val || null);
-      }}>
-        <option value="">Pilih Desa/Kelurahan</option>
-        {villages.map((v) => <option key={v.code} value={v.code}>{v.name}</option>)}
-      </select>
-    </div>
-  );
-};
-```
+Tidak ada salahnya mulai dari custom dulu (lebih ringan, lebih kamu pahami luar-dalam), lalu pindah ke library kalau kebutuhannya memang melebihi yang masuk akal untuk di-maintain sendiri.
 
 ---
 
-### C. Komponen Peta Utama (`src/components/MapContainer.tsx`)
+## Referensi
 
-Komponen utama yang memuat peta vektor **PMTiles** dan menerapkan filter visual berdasarkan pilihan wilayah:
-
-```typescript
-import React, { useEffect, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
-import * as pmtiles from 'pmtiles';
-import 'maplibre-gl/dist/maplibre-gl.css';
-
-interface MapContainerProps {
-  selectedLevel: string;
-  selectedCode: string | null;
-}
-
-const REPO_URL = "https://QueenOfMagician.github.io/geomaps_indo/data-static-indonesia/geo-indonesia";
-
-export const MapContainer: React.FC<MapContainerProps> = ({ selectedLevel, selectedCode }) => {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-
-  // Inisialisasi Protokol PMTiles sekali saja saat component dimuat
-  useEffect(() => {
-    const protocol = new pmtiles.Protocol();
-    maplibregl.addProtocol("pmtiles", protocol.tile);
-
-    return () => {
-      // Membersihkan protokol jika komponen di-unmount
-      maplibregl.removeProtocol("pmtiles");
-    };
-  }, []);
-
-  // Inisialisasi Map
-  useEffect(() => {
-    if (!mapContainer.current || mapRef.current) return;
-
-    // Load level 2 (Kabupaten) secara default untuk demo
-    const defaultPmtilesUrl = `pmtiles://${REPO_URL}/IDN_level_2.pmtiles`;
-
-    const map = new maplibregl.Map({
-      container: mapContainer.current,
-      style: {
-        version: 8,
-        sources: {
-          "idn-boundaries": {
-            type: "vector",
-            url: defaultPmtilesUrl,
-            attribution: '© Protomaps © Kemendagri'
-          }
-        },
-        layers: [
-          {
-            id: "background",
-            type: "background",
-            paint: { "background-color": "#eef2f7" }
-          },
-          {
-            id: "boundary-fill",
-            source: "idn-boundaries",
-            "source-layer": "IDN_level_2",
-            type: "fill",
-            paint: {
-              "fill-color": "#4dabf7",
-              "fill-opacity": 0.4,
-              "fill-outline-color": "#1c7ed6"
-            }
-          },
-          {
-            id: "boundary-line",
-            source: "idn-boundaries",
-            "source-layer": "IDN_level_2",
-            type: "line",
-            paint: {
-              "line-color": "#1c7ed6",
-              "line-width": 1.2
-            }
-          }
-        ]
-      },
-      center: [118.0, -2.5],
-      zoom: 4.5
-    });
-
-    map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
-    mapRef.current = map;
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
-  }, []);
-
-  // Tangani perubahan filter / zoom ketika region dipilih
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-
-    if (!selectedCode) {
-      // Jika tidak ada region terpilih, hapus filter / kembalikan filter default
-      map.setFilter("boundary-fill", null);
-      return;
-    }
-
-    // Terapkan filter berdasarkan level
-    // Kode wilayah terstruktur, misal:
-    // Jawa Barat -> "32"
-    // Kota Bandung -> "32.73"
-    // Kode dicocokkan dengan properti dari GeoJSON PMTiles
-    let filterExpression: any[] = [];
-    
-    if (selectedLevel === 'province') {
-      // Filter wilayah di bawah provinsi terpilih (misal kode diawali "32")
-      filterExpression = ["parse-number", ["slice", ["get", "CC_1"], 0, 2]] ;
-      // Di Mapbox/Maplibre Vector Tiles, properti dependensi kode wilayah biasanya disimpan di properti metadata
-      map.setFilter("boundary-fill", ["==", ["slice", ["get", "code"], 0, 2], selectedCode]);
-    } else if (selectedLevel === 'regency') {
-      map.setFilter("boundary-fill", ["==", ["slice", ["get", "code"], 0, 5], selectedCode]);
-    } else if (selectedLevel === 'district') {
-      map.setFilter("boundary-fill", ["==", ["slice", ["get", "code"], 0, 8], selectedCode]);
-    }
-
-  }, [selectedLevel, selectedCode]);
-
-  return <div ref={mapContainer} style={{ width: '100vw', height: '100vh' }} />;
-};
-```
-
-### D. Main Application Entry (`src/App.tsx`)
-
-Gabungkan selektor wilayah dengan peta:
-
-```typescript
-import React, { useState } from 'react';
-import { MapContainer } from './components/MapContainer';
-import { RegionSelector } from './components/RegionSelector';
-
-function App() {
-  const [selectedLevel, setSelectedLevel] = useState<string>('province');
-  const [selectedCode, setSelectedCode] = useState<string | null>(null);
-
-  const handleRegionChange = (level: string, code: string | null) => {
-    setSelectedLevel(level);
-    setSelectedCode(code);
-  };
-
-  return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      <RegionSelector onRegionChange={handleRegionChange} />
-      <MapContainer selectedLevel={selectedLevel} selectedCode={selectedCode} />
-    </div>
-  );
-}
-
-export default App;
-```
-
----
-
-## 5. Menjalankan Aplikasi Secara Lokal
-
-Jalankan perintah berikut untuk menguji aplikasi secara lokal:
-
-```bash
-npm run dev
-```
-
-Buka peramban di alamat `http://localhost:5173` untuk melihat hasilnya.
-
----
-
-## 6. Publikasi ke GitHub Pages / Vercel
-
-Aplikasi web statis ini dapat di-deploy dengan mudah karena semua aset peta dan JSON-nya sudah di-host di GitHub Pages QueenOfMagician secara cloudless.
-
-Untuk deploy aplikasi React ke GitHub Pages:
-1. Instal dependensi gh-pages: `npm install -D gh-pages`
-2. Tambahkan `"homepage": "https://username.github.io/repository-name"` di `package.json`.
-3. Tambahkan script `"deploy": "npm run build && gh-pages -d dist"` di `package.json`.
-4. Jalankan `npm run deploy` untuk mempublikasikan dashboard peta Anda!
+- [MDN — SVG Path data](https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/d)
+- [PostGIS — ST_Simplify](https://postgis.net/docs/ST_Simplify.html)
+- [Map Projections (penjelasan visual)](https://www.geo-projections.com/)
