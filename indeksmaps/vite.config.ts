@@ -4,7 +4,8 @@ import dts from 'vite-plugin-dts'
 import { resolve } from 'path'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  publicDir: command === 'serve' ? 'public' : false,
   plugins: [
     react(),
     dts({
@@ -30,4 +31,4 @@ export default defineConfig({
       }
     }
   }
-})
+}))
