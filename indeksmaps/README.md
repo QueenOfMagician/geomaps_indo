@@ -133,6 +133,56 @@ function MultiSelectMap({ geojsonData }) {
 
 ---
 
+## 3. Komponen PMTiles (Vector Tiles) - `IndeksMapPMTiles`
+
+Jika Anda ingin menampilkan peta berukuran sangat besar (misalnya seluruh Indonesia sampai tingkat Kelurahan/Desa) tanpa membuat browser lambat, gunakan komponen `IndeksMapPMTiles`. Komponen ini berbasis WebGL menggunakan **MapLibre GL JS** dan memuat bagian peta yang diperlukan saja secara dinamis via CDN.
+
+### Cara Penggunaan PMTiles:
+```tsx
+import { useState } from "react";
+import { IndeksMapPMTiles } from "indeksmaps";
+import "indeksmaps/dist/indeksmaps.css"; // Impor stylesheet maplibre
+
+function WebGLMap() {
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+
+  return (
+    <div style={{ width: "100%", height: "600px" }}>
+      <IndeksMapPMTiles
+        pmtilesUrl="https://QueenOfMagician.github.io/geomaps_indo/data-static-indonesia/geo-indonesia/IDN_level_1.pmtiles"
+        sourceLayer="IDN_level_1"
+        selectedCode={selectedCode}
+        onRegionClick={(properties) => {
+          setSelectedCode(properties.code);
+          console.log("Wilayah diklik:", properties);
+        }}
+      />
+    </div>
+  );
+}
+```
+
+### API Reference `IndeksMapPMTiles` Props:
+
+| Prop | Tipe | Default | Deskripsi |
+| :--- | :--- | :--- | :--- |
+| `pmtilesUrl` | `string` | *Required* | URL CDN menuju berkas `.pmtiles` (misal link jsDelivr). |
+| `sourceLayer` | `string` | *Required* | Layer sumber di dalam PMTiles (e.g. `"IDN_level_1"`, `"IDN_level_2"`). |
+| `selectedCode` | `string \| null` | `null` | Kode wilayah terpilih tunggal (Single-select). |
+| `selectedCodes` | `string[] \| null` | `null` | Daftar banyak kode wilayah terpilih (Multi-select). |
+| `onRegionClick` | `(properties: any) => void` | `undefined` | Callback ketika wilayah diklik. |
+| `onRegionHover` | `(properties: any \| null) => void` | `undefined` | Callback ketika wilayah di-hover kursor mouse. |
+| `defaultFillColor`| `string` | `"#1e293b"` | Warna isi poligon peta default. |
+| `selectedFillColor`| `string` | `"#0284c7"` | Warna isi poligon peta saat terpilih. |
+| `strokeColor` | `string` | `"#475569"` | Warna garis batas wilayah. |
+| `strokeWidth` | `number` | `1` | Ketebalan garis batas wilayah. |
+| `center` | `[number, number]` | `[118.0, -2.5]` | Koordinat pusat peta `[longitude, latitude]`. |
+| `zoom` | `number` | `4.5` | Tingkat zoom awal. |
+
+---
+
+---
+
 ## Integrasi CDN jsDelivr
 
 **jsDelivr** adalah CDN publik gratis yang secara otomatis mencerminkan (*mirror*) berkas dari **NPM registry** dan **GitHub**. Anda tidak perlu melakukan "push" langsung ke server jsDelivr.
