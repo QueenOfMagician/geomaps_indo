@@ -4,32 +4,35 @@
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  /* Premium Warm Claymorphism Theme (Soft Orange & Soft Red) */
-  --bg-primary: #180c06;
-  --bg-secondary: #22120a;
-  --bg-tertiary: #2e1910;
-  --bg-card: #27140b;
+  /* Premium Slate Base with Separate Clay Accents */
+  --bg-primary: #0b0f19;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1f2937;
+  --bg-card: #111827;
   
-  --text-primary: #fff2eb;
-  --text-secondary: #fca5a5; /* Soft Red */
-  --text-muted: #c2410c;     /* Darker Orange */
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
   
-  --border-color: rgba(251, 146, 60, 0.15); /* Soft Orange border tint */
-  --border-hover: rgba(251, 146, 60, 0.3);
+  /* Distinct Color Accents */
+  --orange-soft: #fed7aa;      /* Soft Orange */
+  --orange-hard: #f97316;      /* Harder Orange */
+  --red-soft: #fecaca;         /* Soft Red */
   
-  /* Accent Colors */
-  --accent-soft-orange: #ffedd5;
-  --accent-soft-red: #fee2e2;
-  --accent: #ea580c;           /* Hard Orange */
-  --accent-glow: rgba(234, 88, 12, 0.25);
-  --accent-secondary: #ef4444; /* Soft Red */
-  --accent-secondary-glow: rgba(239, 68, 68, 0.2);
+  --border-color: rgba(253, 186, 116, 0.12); /* Soft Orange border tint */
+  --border-hover: rgba(253, 186, 116, 0.25);
   
-  --code-bg: #0f0703;
+  /* Accent Application */
+  --accent: var(--orange-hard);
+  --accent-glow: rgba(249, 115, 22, 0.2);
+  --accent-secondary: var(--red-soft);
+  --accent-secondary-glow: rgba(254, 202, 202, 0.15);
+  
+  --code-bg: #070a13;
   --code-text: #fdba74;
   --code-keyword: #f87171;
   --code-string: #fca5a5;
-  --code-comment: #8c533c;
+  --code-comment: #64748b;
   --code-tag: #fda4af;
   
   --success: #10b981;
