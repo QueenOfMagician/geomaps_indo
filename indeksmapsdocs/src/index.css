@@ -140,7 +140,7 @@ body {
 }
 
 .logo-icon {
-  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  background-color: var(--accent);
   width: 38px;
   height: 38px;
   border-radius: 12px;
@@ -159,9 +159,7 @@ body {
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.5px;
-  background: linear-gradient(to right, #ffffff, #fca5a5);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
 }
 
 .nav-links {
@@ -202,7 +200,7 @@ body {
 
 .nav-item.active {
   color: #ffffff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  background-color: var(--accent);
   border-color: rgba(251, 146, 60, 0.25);
   box-shadow: var(--clay-shadow-button);
 }
@@ -230,9 +228,7 @@ body {
   font-weight: 700;
   letter-spacing: -1px;
   margin-bottom: 20px;
-  background: linear-gradient(to right, #ffffff, #fdba74);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
 }
 
 .doc-section h2 {
