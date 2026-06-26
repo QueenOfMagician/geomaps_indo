@@ -8,12 +8,14 @@ import {
   Copy,
   Info,
   Sliders,
-  Code
+  Code,
+  Globe,
+  Database
 } from "lucide-react";
 import { IndeksMap } from "indeksmaps";
 import type { GeoJSONFeatureCollection, GeoJSONFeature } from "indeksmaps";
 
-type Section = "intro" | "install" | "svg-map" | "vector-map" | "api";
+type Section = "intro" | "install" | "normalization" | "svg-map" | "vector-map" | "api";
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<Section>("intro");
@@ -23,11 +25,9 @@ export default function App() {
   const [selectedLevel, setSelectedLevel] = useState<1 | 2>(1);
   const [strokeColor, setStrokeColor] = useState("#475569");
   const [strokeWidth, setStrokeWidth] = useState(0.8);
-  const [defaultFill, setDefaultFill] = useState("#1e293b");
-  const [hoverFill, setHoverFill] = useState("#0ea5e9");
-  const hoverStroke = "#38bdf8";
-  const [selectedFill, setSelectedFill] = useState("#8b5cf6");
-  const selectedStroke = "#c084fc";
+  const [defaultFill, setDefaultFill] = useState("#ffffff");
+  const [hoverFill, setHoverFill] = useState("#fed7aa");
+  const [selectedFill, setSelectedFill] = useState("#f97316");
   const [showLabels, setShowLabels] = useState(true);
 
   // Map Data
@@ -75,6 +75,8 @@ export default function App() {
   const codeString = `import { IndeksMap } from 'indeksmaps';
 
 function MyMap() {
+  const [selectedFeatures, setSelectedFeatures] = useState([]);
+
   return (
     <IndeksMap
       data={geoJSONData}
@@ -82,15 +84,20 @@ function MyMap() {
       height={450}
       defaultFill="${defaultFill}"
       hoverFill="${hoverFill}"
-      hoverStroke="${hoverStroke}"
       selectedFill="${selectedFill}"
-      selectedStroke="${selectedStroke}"
       strokeColor="${strokeColor}"
       strokeWidth={${strokeWidth}}
       showLabels={${showLabels}}
       labelField="${selectedLevel === 1 ? 'NAME_1' : 'NAME_2'}"
       selectedFeatures={selectedFeatures}
-      onFeatureClick={(feature) => handleFeatureClick(feature)}
+      onFeatureClick={(feature) => {
+        // Toggle selection
+        setSelectedFeatures(prev => 
+          prev.some(f => f.properties.GID_1 === feature.properties.GID_1)
+            ? prev.filter(f => f.properties.GID_1 !== feature.properties.GID_1)
+            : [...prev, feature]
+        );
+      }}
     />
   );
 }`;
@@ -119,6 +126,13 @@ function MyMap() {
           >
             <Terminal size={18} />
             Instalasi
+          </a>
+          <a 
+            className={`nav-item ${activeSection === "normalization" ? "active" : ""}`}
+            onClick={() => setActiveSection("normalization")}
+          >
+            <Database size={18} />
+            Normalisasi Kode
           </a>
 
           <span className="nav-section-title" style={{ marginTop: "16px" }}>Panduan Komponen</span>
@@ -153,45 +167,78 @@ function MyMap() {
           <section className="doc-section">
             <h1>IndeksMaps</h1>
             <p>
-              IndeksMaps adalah React + TypeScript Map Library modern yang dirancang khusus untuk merender peta batas administratif Indonesia (dari tingkat Negara, Provinsi, Kabupaten/Kota, Kecamatan, hingga Kelurahan/Desa) secara interaktif tanpa ketergantungan pada library GIS eksternal yang berat.
+              IndeksMaps adalah React + TypeScript Map Library modern yang dirancang khusus untuk merender peta batas administratif Indonesia secara ringan, interaktif, dan mudah dimodifikasi. Library ini mendukung visualisasi interaktif dari level 0 (Negara) hingga level 4 (Kelurahan/Desa).
             </p>
             
             <div className="alert">
               <div className="alert-title">
-                <Info size={16} /> Fitur Unggulan
+                <Info size={16} /> Fitur Utama
               </div>
               <div className="alert-content">
-                Mendukung flat projection Equirectangular (SVG Rendering) yang ringan, Multi-Select wilayah secara bawaan, serta rendering peta vektor hemat bandwidth berbasis format PMTiles.
+                Mendukung flat projection Equirectangular (SVG Rendering) yang hemat memori, Multi-Select wilayah secara bawaan, serta rendering peta vektor hemat bandwidth berbasis format PMTiles.
               </div>
             </div>
 
-            <h2>Kenapa IndeksMaps?</h2>
+            <h2>Keuntungan Arsitektur</h2>
             <div className="card-grid">
               <div className="card">
                 <div className="card-title">
-                  <Map size={20} color="#0ea5e9" /> Ringan & Cepat
+                  <Map size={20} color="#ea580c" /> Flat Projection (SVG)
                 </div>
                 <div className="card-description">
-                  SVG Rendering datar tanpa library d3-geo atau Leaflet. Ukuran bundle library hanya berkisar 10 KB (unpacked).
+                  Tidak memuat engine GIS eksternal berat (seperti d3-geo atau Leaflet). Peta dirender langsung sebagai jalur SVG datar untuk kinerja render yang cepat.
                 </div>
               </div>
               <div className="card">
                 <div className="card-title">
-                  <Layers size={20} color="#8b5cf6" /> Skalabilitas PMTiles
+                  <Layers size={20} color="#ea580c" /> PMTiles Vector Tiles
                 </div>
                 <div className="card-description">
-                  Mendukung data besar tingkat Desa/Kelurahan menggunakan protokol PMTiles untuk meminimalkan beban lag browser.
+                  Membaca tile geografis secara parsial via HTTP Range Requests. Cocok untuk data detail tingkat Desa/Kelurahan tanpa server hosting GIS khusus.
                 </div>
               </div>
               <div className="card">
                 <div className="card-title">
-                  <Sliders size={20} color="#10b981" /> Reusable & Kustomisasi
+                  <Sliders size={20} color="#ea580c" /> Kontrol Penuh Styling
                 </div>
                 <div className="card-description">
-                  Gaya wilayah (fill, hover, stroke, label, tooltip) dan state pemilihan dapat dimanipulasi sepenuhnya via props.
+                  Ubah fill color, border width, interaksi hover, serta kelola status multi-select menggunakan state manager React Anda sendiri.
                 </div>
               </div>
             </div>
+
+            <h2>Perbandingan Metode Rendering</h2>
+            <table className="prop-table">
+              <thead>
+                <tr>
+                  <th>Fitur</th>
+                  <th>SVG (IndeksMap)</th>
+                  <th>Vector (IndeksMapPMTiles)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Tingkat Detail Wilayah</td>
+                  <td>Provinsi & Kota/Kabupaten (ringan)</td>
+                  <td>Kecamatan & Kelurahan/Desa (sangat detail)</td>
+                </tr>
+                <tr>
+                  <td>Ukuran Aset Geometri</td>
+                  <td>1 MB - 5 MB (GeoJSON)</td>
+                  <td>10 MB - 100 MB+ (PMTiles compressed)</td>
+                </tr>
+                <tr>
+                  <td>Penanganan Lag Browser</td>
+                  <td>Bisa melambat jika ribuan polygon dirender</td>
+                  <td>Sangat lancar (hanya merender area yang dilihat)</td>
+                </tr>
+                <tr>
+                  <td>Zoom & Pan bawaan</td>
+                  <td>Datar (dinonaktifkan secara default)</td>
+                  <td>Interaktif bawaan (MapLibre GL engine)</td>
+                </tr>
+              </tbody>
+            </table>
           </section>
         )}
 
@@ -200,7 +247,7 @@ function MyMap() {
           <section className="doc-section">
             <h1>Instalasi</h1>
             <p>
-              Gunakan package manager pilihan Anda untuk meng-install package library dari NPM registry:
+              Instal package library melalui NPM registry di dalam direktori project Anda:
             </p>
 
             <div className="code-block">
@@ -216,30 +263,81 @@ function MyMap() {
               <span className="t-keyword">npm install</span> indeksmaps
             </div>
 
-            <h2>Langkah Tambahan: Menyiapkan Geometri & Aset Peta</h2>
+            <h2>Penggunaan CDN Alternatif (jsDelivr)</h2>
             <p>
-              Karena peta batasan geografis Indonesia memiliki ukuran data yang besar (terutama level 3 dan 4), berkas GeoJSON/PMTiles tidak dibundel di dalam library. Anda harus menempatkannya di direktori publik server web Anda agar dapat diunduh klien:
+              Anda juga bisa memuat library ini secara langsung di browser tanpa build step menggunakan CDN jsDelivr:
+            </p>
+            <div className="code-block">
+              <div className="code-header">
+                <span>HTML SCRIPT</span>
+              </div>
+              &lt;<span className="t-tag">script</span> <span className="t-attr">src</span>=<span className="t-string">"https://cdn.jsdelivr.net/npm/indeksmaps@1.0.0/dist/indeksmaps.umd.js"</span>&gt;&lt;/<span className="t-tag">script</span>&gt;
+            </div>
+
+            <h2>Menyajikan Berkas Peta Batas Wilayah</h2>
+            <p>
+              Peta batas administratif Indonesia berukuran besar. Oleh karena itu, berkas geometri (GeoJSON/PMTiles) harus di-host di folder publik server web Anda atau melalui CDN:
             </p>
 
-            <div className="alert alert-warning">
+            <div className="alert">
               <div className="alert-title">
-                <Info size={16} /> Lokasi Berkas Peta
+                <Globe size={16} /> Menggunakan CDN Repository untuk File Peta
               </div>
               <div className="alert-content">
-                Letakkan berkas GADM GeoJSON atau berkas PMTiles di dalam folder <code>public/</code> proyek React Anda (atau sajikan melalui CDN seperti jsDelivr/S3).
+                Anda dapat langsung memuat berkas peta dari CDN jsDelivr milik repositori ini untuk menghemat penyimpanan lokal:
+                <br />
+                <code>https://cdn.jsdelivr.net/gh/QueenOfMagician/geomaps_indo@main/indeksmaps/public/gadm41_IDN_1.json</code>
               </div>
             </div>
+          </section>
+        )}
 
-            <p>Struktur folder aset statis yang direkomendasikan:</p>
-            <div className="code-block" style={{ fontSize: "12.5px" }}>
-              proyek-react/<br />
-              ├── public/<br />
-              │   ├── gadm41_IDN_1.json     <span className="t-comment"># Batas Provinsi (SVG)</span><br />
-              │   ├── gadm41_IDN_2.json     <span className="t-comment"># Batas Kota/Kabupaten (SVG)</span><br />
-              │   ├── gadm41_IDN_3.json     <span className="t-comment"># Batas Kecamatan (SVG)</span><br />
-              │   ├── IDN_level_1.pmtiles   <span className="t-comment"># Vector Map (PMTiles)</span><br />
-              │   └── IDN_level_2.pmtiles   <span className="t-comment"># Vector Map (PMTiles)</span>
+        {/* SECTION: NORMALIZATION */}
+        {activeSection === "normalization" && (
+          <section className="doc-section">
+            <h1>Normalisasi Nama & Kode Wilayah</h1>
+            <p>
+              Terdapat perbedaan standar penulisan nama wilayah antara database geografis global (GADM v4.1) dan data administratif dalam negeri (Kemendagri). Library ini menyertakan utilitas normalisasi untuk mencocokkan data.
+            </p>
+
+            <div className="card">
+              <div className="card-title">Perbedaan Standar Penulisan</div>
+              <p style={{ fontSize: "14.5px" }}>
+                GADM menuliskan nama dalam format <em>PascalCase</em> dan seringkali tanpa spasi (misalnya: <code>SumateraUtara</code>, <code>JakartaRaya</code>), sedangkan Kemendagri menggunakan spasi dan tanda hubung resmi (misalnya: <code>Sumatera Utara</code>, <code>DKI Jakarta</code>).
+              </p>
             </div>
+
+            <h2>Fungsi Helper Normalisasi Nama</h2>
+            <p>
+              Untuk melakukan sinkronisasi pencarian wilayah, gunakan fungsi normalisasi berikut dalam program Anda:
+            </p>
+
+            <div className="code-block">
+              <pre>
+                <code>
+{`function normalizeName(name: string): string {
+  if (!name) return "";
+  return name.toLowerCase()
+    .replace(/\\s+/g, "") // Hapus semua spasi
+    .replace(/kabupaten/g, "")
+    .replace(/kota/g, "")
+    .replace(/raya/g, "")
+    .trim();
+}`}
+                </code>
+              </pre>
+            </div>
+
+            <h2>Struktur Kode Wilayah Kemendagri</h2>
+            <p>
+              Database wilayah dalam repositori ini terbagi menjadi struktur file JSON hierarkis berbasis kode Kemendagri:
+            </p>
+            <ul>
+              <li><strong>Provinsi</strong>: 2 digit kode (misal: <code>32</code> - Jawa Barat)</li>
+              <li><strong>Kabupaten/Kota</strong>: 4 digit kode (misal: <code>32.73</code> - Kota Bandung)</li>
+              <li><strong>Kecamatan</strong>: 6 digit kode (misal: <code>32.73.05</code> - Coblong)</li>
+              <li><strong>Kelurahan/Desa</strong>: 10 digit kode</li>
+            </ul>
           </section>
         )}
 
@@ -248,7 +346,7 @@ function MyMap() {
           <section className="doc-section">
             <h1>Komponen IndeksMap (SVG)</h1>
             <p>
-              Komponen utama untuk merender peta berbasis elemen SVG dengan manipulasi warna penuh secara flat, hover handler, dan multi-select wilayah.
+              Render peta berbasis elemen SVG standar dengan manipulasi warna penuh secara flat, hover handler, dan multi-select wilayah.
             </p>
 
             <div className="playground-container">
@@ -348,14 +446,14 @@ function MyMap() {
                       strokeWidth={strokeWidth}
                       defaultFill={defaultFill}
                       hoverFill={hoverFill}
-                      hoverStroke={hoverStroke}
+                      hoverStroke="#38bdf8"
                       selectedFill={selectedFill}
-                      selectedStroke={selectedStroke}
+                      selectedStroke="#c084fc"
                       selectedFeatures={selectedFeatures}
                       onFeatureClick={handleFeatureClick}
                       showLabels={showLabels}
                       labelField={selectedLevel === 1 ? "NAME_1" : "NAME_2"}
-                      labelColor="#ffffff"
+                      labelColor="#431407"
                       labelSize={8}
                     />
                     <div style={{ fontSize: "12px", color: "var(--text-secondary)", textAlign: "center" }}>
@@ -370,6 +468,28 @@ function MyMap() {
                   <div style={{ color: "red" }}>Gagal memuat aset peta.</div>
                 )}
               </div>
+            </div>
+
+            <h2>Peta Tematik (Choropleth) Custom Styling</h2>
+            <p>
+              Anda bisa mewarnai wilayah secara dinamis berdasarkan data statistik (kepadatan penduduk, hasil suara pemilu, dll) menggunakan callback <code>defaultFill</code> berbasis data:
+            </p>
+            <div className="code-block">
+              <pre>
+                <code>
+{`// Contoh mewarnai provinsi berdasarkan data kepadatan penduduk
+const densityData = { "Jawa Barat": 1400, "Papua": 10 };
+
+<IndeksMap
+  data={geojson}
+  defaultFill={(feature) => {
+    const name = feature.properties.NAME_1;
+    const val = densityData[name] || 0;
+    return val > 1000 ? '#b91c1c' : val > 500 ? '#f97316' : '#fef08a';
+  }}
+/>`}
+                </code>
+              </pre>
             </div>
 
             <h2>Kode Penggunaan Proyeksi Props di Atas:</h2>
@@ -397,7 +517,7 @@ function MyMap() {
           <section className="doc-section">
             <h1>IndeksMapPMTiles (Vector Map)</h1>
             <p>
-              Untuk merender tingkat peta yang sangat detail (seperti Kecamatan (Level 3) atau Kelurahan/Desa (Level 4)) tanpa membuat lag browser pengguna, gunakan peta vektor. Komponen <code>IndeksMapPMTiles</code> membungkus <code>MapLibre GL</code> dan protokol <code>PMTiles</code> untuk rendering peta berkinerja tinggi.
+              Untuk merender tingkat peta yang sangat detail seperti Kecamatan (Level 3) atau Kelurahan/Desa (Level 4) tanpa membebani memori browser, gunakan peta vektor. Komponen <code>IndeksMapPMTiles</code> membungkus <code>MapLibre GL</code> dan protokol <code>PMTiles</code> untuk rendering peta berkinerja tinggi.
             </p>
 
             <h2>Contoh Penggunaan</h2>
@@ -426,7 +546,7 @@ function PetaKelurahan() {
         styleUrl="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
         zoom={11}
         center={[106.8456, -6.2088]} // Jakarta
-        fillColor="#38bdf8"
+        fillColor="#f97316"
         fillOpacity={0.4}
         strokeColor="#ffffff"
         strokeWidth={1}
@@ -479,9 +599,9 @@ function PetaKelurahan() {
                 </tr>
                 <tr>
                   <td><code>defaultFill</code></td>
-                  <td><code>string</code></td>
+                  <td><code>string | ((f: GeoJSONFeature) =&gt; string)</code></td>
                   <td><code>"#1e293b"</code></td>
-                  <td>Warna isi default wilayah.</td>
+                  <td>Warna isi default wilayah atau fungsi callback pewarnaan kustom per wilayah.</td>
                 </tr>
                 <tr>
                   <td><code>hoverFill</code></td>
